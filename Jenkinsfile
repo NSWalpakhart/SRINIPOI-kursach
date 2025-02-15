@@ -9,30 +9,40 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/NSWalpakhart/SRINIPOI-kursach.git'
+                checkout([$class: 'GitSCM',
+                    branches: [[name: 'main']],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/NSWalpakhart/SRINIPOI-kursach.git',
+                    ]]
+                ])
             }
         }
         
         stage('Build') {
             steps {
+
                 sh '''
                     # Создаем Docker image
                     docker build -t guess-game-app .
                 '''
             }
+            
         }
         
         stage('Test') {
             steps {
+
                 sh '''
                     # Запускаем тесты
                     go test ./... || true
                 '''
             }
+            
         }
         
         stage('Deploy') {
             steps {
+
                 sh '''
                     # Останавливаем и удаляем старый контейнер если он существует
                     docker stop ${CONTAINER_NAME} || true
@@ -46,6 +56,7 @@ pipeline {
                         guess-game-app
                 '''
             }
+            
         }
         
         stage('Health Check') {
@@ -55,18 +66,25 @@ pipeline {
                     sleep 10
                     
                     # Проверяем что приложение отвечает
-                    curl -f http://localhost:${APP_PORT} || exit 1
+                    curl -f http://localhost:${APP_PORT}
                 '''
             }
         }
-    }
-    
-    post {
-        failure {
-            sh '''
-                # В случае ошибки, пытаемся восстановить предыдущую версию
-                docker start ${CONTAINER_NAME} || true
-            '''
+        
+        stage('Error Handler') {
+            steps {
+
+                script {
+                    if (currentBuild.result == 'FAILURE' || currentBuild.result == null) {
+                        node('built-in') {
+                            sh '''
+                                docker start guess-game || true
+                            '''
+                        }
+                    }
+                }
+            }
+            
         }
     }
 }
