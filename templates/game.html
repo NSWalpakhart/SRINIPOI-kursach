@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Игра "Угадай число"</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .game-form {
+            margin: 20px 0;
+        }
+        .timer {
+            color: #ff4444;
+            font-weight: bold;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .error { background-color: #ffebee; }
+        .success { background-color: #e8f5e9; }
+    </style>
+    <script>
+        let timeLeft = {{.TimeLeft}};
+        
+        function updateTimer() {
+            if (timeLeft > 0) {
+                document.getElementById('timer').textContent = timeLeft;
+                timeLeft--;
+                setTimeout(updateTimer, 1000);
+            } else {
+                document.getElementById('timer').textContent = "Время вышло!";
+                document.getElementById('guessForm').style.display = 'none';
+            }
+        }
+        
+        window.onload = function() {
+            updateTimer();
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Угадай число!</h1>
+        <p>Загаданное число: {{.HiddenNum}}</p>
+        <p>Осталось времени: <span id="timer" class="timer">{{.TimeLeft}}</span> секунд</p>
+        
+        {{if not .GameOver}}
+            <form id="guessForm" class="game-form" method="POST">
+                <input type="number" name="guess" min="1" max="100" required>
+                <button type="submit">Угадать</button>
+            </form>
+        {{end}}
+        
+        {{if .GuessResult}}
+            <div class="message {{if eq .GuessResult "Поздравляем! Вы угадали число!"}}success{{else}}error{{end}}">
+                {{.GuessResult}}
+            </div>
+        {{end}}
+        
+        <div class="stats">
+            <p>Количество посещений: {{.Visits}}</p>
+            <p>Последнее посещение: {{.LastVisit}}</p>
+        </div>
+    </div>
+</body>
+</html> 

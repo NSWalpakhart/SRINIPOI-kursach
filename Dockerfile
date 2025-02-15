@@ -1,9 +1,13 @@
-FROM golang:1.17-alpine AS build
+FROM golang:1.20-alpine
 
-WORKDIR /src/
-COPY app.go go.* /src/
-RUN CGO_ENABLED=0 go build -o /bin/demo
+WORKDIR /app
 
-FROM scratch
-COPY --from=build /bin/demo /bin/demo
-ENTRYPOINT ["/bin/demo"]
+COPY . .
+
+RUN go mod init guess-game && \
+    go mod tidy && \
+    go build -o main .
+
+EXPOSE 8888
+
+CMD ["./main"]
