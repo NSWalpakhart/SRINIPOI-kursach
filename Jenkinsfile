@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     parameters {
-        string(name: 'ENVIRONMENT_KEY', defaultValue: '', description: 'Ключ окружения для приложения')
+        string(name: 'ENVIRONMENT_KEY', defaultValue: 'main', description: 'Ключ окружения для приложения')
     }
     
     environment {
@@ -24,30 +24,32 @@ pipeline {
         
         stage('Test') {
             steps {
-                dir("SRINIPOI-kursach") {
                 sh '''
+                    wget https://go.dev/dl/go1.20.linux-amd64.tar.gz
+                    sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.20.linux-amd64.tar.gz
+                    export PATH=$PATH:/usr/local/go/bin
+                    
+                    go mod init guess-game
+                    go mod tidy
+                    
                     go test ./... -v > test-report.txt || true
                 '''
                 archiveArtifacts artifacts: 'test-report.txt', allowEmptyArchive: true
-                }
             }
         }
         
         stage('Build') {
             steps {
-                dir('SRINIPOI-kursach'){
                 sh '''
                     docker build -t guess-game-app .
                     docker save guess-game-app > guess-game-app.tar
                 '''
                 archiveArtifacts artifacts: 'guess-game-app.tar', allowEmptyArchive: false
                 }
-            }
         }
         
         stage('Deploy') {
             steps {
-                dir("SRINIPOI-kursach") {
                 sh '''
                     docker stop ${CONTAINER_NAME} || true
                     docker rm ${CONTAINER_NAME} || true
@@ -57,7 +59,6 @@ pipeline {
                         --restart unless-stopped \
                         guess-game-app
                 '''
-            }
             }
         }
         
@@ -72,7 +73,6 @@ pipeline {
         
         stage('Error Handler') {
             steps {
-                dir("SRINIPOI-kursach") {
                 script {
                     if (currentBuild.result == 'FAILURE' || currentBuild.result == null) {
                         node('built-in') {
@@ -82,7 +82,6 @@ pipeline {
                         }
                     }
                 }
-            }
             }
         }
     }
