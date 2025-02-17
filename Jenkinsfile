@@ -17,7 +17,6 @@ pipeline {
                     branches: [[name: "${params.ENVIRONMENT_KEY}"]],
                     userRemoteConfigs: [[
                         url: 'https://github.com/NSWalpakhart/SRINIPOI-kursach.git',
-                        credentialsId: GITHUB_CREDENTIALS
                     ]]
                 ])
             }
