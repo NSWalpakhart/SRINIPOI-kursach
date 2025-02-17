@@ -21,15 +21,18 @@ type PageData struct {
 	LastGuess   string
 	GuessResult string
 	GameOver    bool
+	PrevGuesses []string
+	ShowNumber  bool
 }
 
 var (
-	visitCount int
-	lastVisit  time.Time
-	mu         sync.Mutex
+	visitCount     int
+	lastVisit      time.Time
+	mu             sync.Mutex
 	gameNumber     int
 	gameStartTime  time.Time
 	lastGuessTime  time.Time
+	prevGuesses    []string
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -40,39 +43,59 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		gameNumber = time.Now().Nanosecond()%100 + 1
 		gameStartTime = time.Now()
 		lastGuessTime = time.Now()
+		prevGuesses = []string{}
 	}
 
 	data := PageData{
-		Visits:    visitCount,
-		LastVisit: lastVisit.Format("02.01.2006 15:04:05"),
-		HiddenNum: "***",
-		TimeLeft:  60 - int(time.Since(gameStartTime).Seconds()),
-		GameOver:  false,
+		Visits:      visitCount,
+		LastVisit:   lastVisit.Format("02.01.2006 15:04:05"),
+		HiddenNum:   "***",
+		TimeLeft:    60 - int(time.Since(gameStartTime).Seconds()),
+		GameOver:    false,
+		PrevGuesses: prevGuesses,
+		ShowNumber:  false,
 	}
 
-	if data.TimeLeft < 0 {
-		data.TimeLeft = 0
-		data.GameOver = true
-		data.GuessResult = "Время вышло! Игра окончена."
+	if data.GameOver {
+		data.HiddenNum = strconv.Itoa(gameNumber)
+		data.ShowNumber = true
 	}
 
-	if r.Method == "POST" && !data.GameOver {
-		if time.Since(lastGuessTime) > 5*time.Second {
-			data.GuessResult = "Слишком долго думаете! Нужно отвечать быстрее 5 секунд."
-		} else {
-			guess := r.FormValue("guess")
-			if guessNum, err := strconv.Atoi(guess); err == nil {
-				if guessNum == gameNumber {
-					data.GuessResult = "Поздравляем! Вы угадали число!"
-					data.GameOver = true
-				} else if guessNum < gameNumber {
-					data.GuessResult = "Загаданное число больше!"
-				} else {
-					data.GuessResult = "Загаданное число меньше!"
+	if r.Method == "POST" {
+		if r.FormValue("restart") == "true" {
+			gameNumber = time.Now().Nanosecond()%100 + 1
+			gameStartTime = time.Now()
+			lastGuessTime = time.Now()
+			prevGuesses = []string{}
+			data.GameOver = false
+			data.GuessResult = ""
+			data.HiddenNum = "***"
+			data.ShowNumber = false
+			data.TimeLeft = 60
+		} else if !data.GameOver {
+			if time.Since(lastGuessTime) > 5*time.Second {
+				data.GuessResult = "Слишком долго думаете! Нужно отвечать быстрее 5 секунд."
+			} else {
+				guess := r.FormValue("guess")
+				if guessNum, err := strconv.Atoi(guess); err == nil {
+					if guessNum == gameNumber {
+						data.GuessResult = "Поздравляем! Вы угадали число!"
+						data.GameOver = true
+						data.HiddenNum = strconv.Itoa(gameNumber)
+						data.ShowNumber = true
+					} else {
+						if guessNum < gameNumber {
+							data.GuessResult = "Загаданное число больше!"
+						} else {
+							data.GuessResult = "Загаданное число меньше!"
+						}
+						prevGuesses = append(prevGuesses, guess)
+						data.PrevGuesses = prevGuesses
+					}
 				}
 			}
+			lastGuessTime = time.Now()
 		}
-		lastGuessTime = time.Now()
 	}
 
 	visitCount++
