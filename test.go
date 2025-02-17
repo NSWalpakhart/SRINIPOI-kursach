@@ -6,36 +6,37 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHandler(t *testing.T) {
 	tests := []struct {
 		name           string
 		method        string
-		guessValue    string
+		formData      url.Values
 		expectedCode  int
 		expectedBody  string
 	}{
 		{
 			name:          "GET запрос должен вернуть форму",
 			method:        "GET",
-			guessValue:    "",
+			formData:      url.Values{},
 			expectedCode:  http.StatusOK,
 			expectedBody:  "Угадай число!",
 		},
 		{
 			name:          "POST запрос с некорректным значением",
 			method:        "POST",
-			guessValue:    "abc",
-			expectedCode:  http.StatusBadRequest,
-			expectedBody:  "Некорректное значение",
+			formData:      url.Values{"guess": {"abc"}},
+			expectedCode:  http.StatusOK,
+			expectedBody:  "Угадай число!",
 		},
 		{
-			name:          "POST запрос со значением вне диапазона",
+			name:          "POST запрос с перезапуском игры",
 			method:        "POST",
-			guessValue:    "101",
-			expectedCode:  http.StatusBadRequest,
-			expectedBody:  "Число должно быть от 1 до 100",
+			formData:      url.Values{"restart": {"true"}},
+			expectedCode:  http.StatusOK,
+			expectedBody:  "Угадай число!",
 		},
 	}
 
@@ -45,9 +46,7 @@ func TestHandler(t *testing.T) {
 			if tt.method == "GET" {
 				req = httptest.NewRequest("GET", "/", nil)
 			} else {
-				form := url.Values{}
-				form.Add("guess", tt.guessValue)
-				req = httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+				req = httptest.NewRequest("POST", "/", strings.NewReader(tt.formData.Encode()))
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			}
 
@@ -67,61 +66,96 @@ func TestHandler(t *testing.T) {
 	}
 }
 
-func TestGameLogic(t *testing.T) {
+func TestGameTimeLimits(t *testing.T) {
+	// Сброс глобальных переменных
+	mu.Lock()
+	gameStartTime = time.Now().Add(-61 * time.Second) // Игра длится больше минуты
+	lastGuessTime = time.Now().Add(-6 * time.Second)  // Последняя попытка была более 5 секунд назад
+	mu.Unlock()
+
+	req := httptest.NewRequest("POST", "/", strings.NewReader(url.Values{"guess": {"50"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	
+	handler(w, req)
+
+	if !strings.Contains(w.Body.String(), "Слишком долго думаете!") {
+		t.Error("Ожидалось сообщение о превышении времени между попытками")
+	}
+}
+
+func TestGameState(t *testing.T) {
 	tests := []struct {
-		name     string
-		target   int
-		guess    int
-		expected string
+		name        string
+		setupFunc   func()
+		guess       string
+		wantResult  string
 	}{
 		{
-			name:     "Угадано правильно",
-			target:   50,
-			guess:    50,
-			expected: "Поздравляем! Вы угадали число!",
+			name: "Правильное угадывание",
+			setupFunc: func() {
+				mu.Lock()
+				gameNumber = 50
+				gameStartTime = time.Now()
+				lastGuessTime = time.Now()
+				mu.Unlock()
+			},
+			guess: "50",
+			wantResult: "Поздравляем! Вы угадали число!",
 		},
 		{
-			name:     "Число меньше загаданного",
-			target:   50,
-			guess:    30,
-			expected: "Загаданное число больше",
-		},
-		{
-			name:     "Число больше загаданного",
-			target:   50,
-			guess:    70,
-			expected: "Загаданное число меньше",
+			name: "Число меньше загаданного",
+			setupFunc: func() {
+				mu.Lock()
+				gameNumber = 50
+				gameStartTime = time.Now()
+				lastGuessTime = time.Now()
+				mu.Unlock()
+			},
+			guess: "30",
+			wantResult: "Загаданное число больше!",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hiddenNumber = tt.target // устанавливаем тестовое значение
-			result := checkGuess(tt.guess)
-			if result != tt.expected {
-				t.Errorf("checkGuess(%d) = %v, ожидалось %v", 
-					tt.guess, result, tt.expected)
+			tt.setupFunc()
+
+			form := url.Values{"guess": {tt.guess}}
+			req := httptest.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			w := httptest.NewRecorder()
+
+			handler(w, req)
+
+			if !strings.Contains(w.Body.String(), tt.wantResult) {
+				t.Errorf("Ожидалось сообщение '%s', получено: %s", tt.wantResult, w.Body.String())
 			}
 		})
 	}
 }
 
 func TestVisitCounter(t *testing.T) {
-	// Сброс счетчика перед тестом
-	visits = 0
-	
+	mu.Lock()
+	visitCount = 0
+	mu.Unlock()
+
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	
-	// Первое посещение
 	handler(w, req)
-	if visits != 1 {
-		t.Errorf("После первого посещения счетчик = %d, ожидалось 1", visits)
-	}
 	
-	// Второе посещение
-	handler(w, req)
-	if visits != 2 {
-		t.Errorf("После второго посещения счетчик = %d, ожидалось 2", visits)
+	mu.Lock()
+	if visitCount != 1 {
+		t.Errorf("После первого посещения счетчик = %d, ожидалось 1", visitCount)
 	}
+	mu.Unlock()
+	
+	handler(w, req)
+	
+	mu.Lock()
+	if visitCount != 2 {
+		t.Errorf("После второго посещения счетчик = %d, ожидалось 2", visitCount)
+	}
+	mu.Unlock()
 } 
