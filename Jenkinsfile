@@ -31,7 +31,7 @@ pipeline {
                     
                     go mod tidy
                     
-                    go test ./... -v > test-report.txt || true
+                    go test -v > test-report.txt || true
                 '''
                 archiveArtifacts artifacts: 'test-report.txt', allowEmptyArchive: true
             }
