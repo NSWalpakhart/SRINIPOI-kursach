@@ -29,7 +29,6 @@ pipeline {
                     sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.20.linux-amd64.tar.gz
                     export PATH=$PATH:/usr/local/go/bin
                     
-                    go mod init guess-game
                     go mod tidy
                     
                     go test ./... -v > test-report.txt || true

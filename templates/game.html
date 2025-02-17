@@ -56,6 +56,22 @@
         <p>Загаданное число: {{.HiddenNum}}</p>
         <p>Осталось времени: <span id="timer" class="timer">{{.TimeLeft}}</span> секунд</p>
         
+        {{if .GameOver}}
+            <form action="/" method="POST">
+                <input type="hidden" name="restart" value="true">
+                <button type="submit">Начать новую игру</button>
+            </form>
+        {{end}}
+        
+        {{if .PrevGuesses}}
+            <p>Предыдущие попытки:</p>
+            <ul>
+            {{range .PrevGuesses}}
+                <li>{{.}}</li>
+            {{end}}
+            </ul>
+        {{end}}
+        
         {{if not .GameOver}}
             <form id="guessForm" class="game-form" method="POST">
                 <input type="number" name="guess" min="1" max="100" required>
