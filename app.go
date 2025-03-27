@@ -117,7 +117,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	http.HandleFunc("/", handler)
 	fmt.Println("Запуск демо-приложения. Нажмите Ctrl+C для выхода...")
-	log.Fatal(http.ListenAndServe(":8888", nil))
+	http.ListenAndServe("0.0.0.0:8888", nil)
 }
 
 func init() {
