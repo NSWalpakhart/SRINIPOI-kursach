@@ -8,9 +8,20 @@ pipeline {
     environment {
         APP_PORT = '8888'
         CONTAINER_NAME = 'guess-game'
+        DOCKER_HUB_CREDENTIALS = credentials('docker-hub-credentials')
+        DOCKER_IMAGE_NAME = 'nswalpakhart/guess-game-app'
     }
     
     stages {
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    sudo apt-get update
+                    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git wget curl docker.io golang-go
+                '''
+            }
+        }
+        
         stage('Checkout') {
             steps {
                 checkout([$class: 'GitSCM',
@@ -26,9 +37,10 @@ pipeline {
             steps {
                 sh '''
                     wget https://go.dev/dl/go1.20.linux-amd64.tar.gz
-                    sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.20.linux-amd64.tar.gz
+                    sudo rm -rf /usr/local/go && sudo -S tar -C /usr/local -xzf go1.20.linux-amd64.tar.gz
                     export PATH=$PATH:/usr/local/go/bin
                     
+                    [ ! -f go.mod ] && go mod init guess-game
                     go mod tidy
                     
                     go test -v > test-report.txt || true
@@ -40,8 +52,11 @@ pipeline {
         stage('Build') {
             steps {
                 sh '''
-                    docker build -t guess-game-app .
-                    docker save guess-game-app > guess-game-app.tar
+                    sudo chmod 666 /var/run/docker.sock
+                    echo ${DOCKER_HUB_CREDENTIALS_PSW} | docker login -u ${DOCKER_HUB_CREDENTIALS_USR} --password-stdin
+                    docker build -t ${DOCKER_IMAGE_NAME}:${BUILD_NUMBER} -t ${DOCKER_IMAGE_NAME}:latest .
+                    docker save ${DOCKER_IMAGE_NAME}:${BUILD_NUMBER} > guess-game-app.tar
+                    docker push ${DOCKER_IMAGE_NAME}:${BUILD_NUMBER}
                 '''
                 archiveArtifacts artifacts: 'guess-game-app.tar', allowEmptyArchive: false
                 }
@@ -56,7 +71,7 @@ pipeline {
                         --name ${CONTAINER_NAME} \
                         -p ${APP_PORT}:${APP_PORT} \
                         --restart unless-stopped \
-                        guess-game-app
+                        ${DOCKER_IMAGE_NAME}:${BUILD_NUMBER}
                 '''
             }
         }
