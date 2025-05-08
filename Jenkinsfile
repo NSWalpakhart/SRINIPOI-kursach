@@ -15,7 +15,7 @@ pipeline {
     }
     
     stages {
-        stage('Deploy to Local PC') {
+        stage('Install Dependencies') {
             steps {
                 withCredentials([
                     sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
@@ -29,6 +29,7 @@ pipeline {
                         ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} "
                             # Check and install all required tools
                             echo 'Installing required tools...'
+                            DEBIAN_FRONTEND=noninteractive
                             echo '\${SUDO_PASSWORD}' | sudo -S apt update
                             echo '\${SUDO_PASSWORD}' | sudo -S apt install -y docker.io git wget curl
                             
@@ -75,7 +76,20 @@ pipeline {
                             wget --version || echo 'Wget not available'
                             curl --version || echo 'Curl not available'
                             go version || echo 'Go not available'
-                            
+                        "
+                    """
+                }
+            }
+        }
+        
+        stage('Checkout') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
+                    string(credentialsId: 'local-pc-sudo-password', variable: 'SUDO_PASSWORD')
+                ]) {
+                    sh """#!/bin/bash
+                        ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} "
                             # Create and switch to working directory
                             rm -rf ~/guess-game-app
                             mkdir -p ~/guess-game-app
@@ -88,6 +102,21 @@ pipeline {
                             # Check files before starting
                             echo 'Checking files...'
                             ls -la
+                        "
+                    """
+                }
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
+                    string(credentialsId: 'local-pc-sudo-password', variable: 'SUDO_PASSWORD')
+                ]) {
+                    sh """#!/bin/bash
+                        ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} "
+                            cd ~/guess-game-app
                             
                             # Create go.mod file with correct Go version
                             if [ ! -f 'go.mod' ]; then
@@ -114,6 +143,21 @@ pipeline {
                             # Run tests
                             echo 'Running tests...'
                             go test . -v || true
+                        "
+                    """
+                }
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
+                    string(credentialsId: 'local-pc-sudo-password', variable: 'SUDO_PASSWORD')
+                ]) {
+                    sh """#!/bin/bash
+                        ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} "
+                            cd ~/guess-game-app
                             
                             echo '\${DOCKER_HUB_CREDENTIALS_PSW}' | docker login -u '\${DOCKER_HUB_CREDENTIALS_USR}' --password-stdin
                             echo '\${SUDO_PASSWORD}' | sudo -S docker info
@@ -126,21 +170,34 @@ pipeline {
                             # Build the Docker image
                             echo 'Building Docker image...'
                             cd build_temp
-                            echo '${SUDO_PASSWORD}' | sudo -S docker build -t ${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:${BUILD_NUMBER} -t ${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:latest .
+                            echo '\${SUDO_PASSWORD}' | sudo -S docker build -t \${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:${BUILD_NUMBER} -t \${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:latest .
                             cd ..
                             
                             # Save the Docker image
-                            echo '${SUDO_PASSWORD}' | sudo -S docker save ${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:${BUILD_NUMBER} > guess-game-app.tar
+                            echo '\${SUDO_PASSWORD}' | sudo -S docker save \${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:${BUILD_NUMBER} > guess-game-app.tar
                             
                             # Login to Docker Hub as root
                             echo 'Logging into Docker Hub as root...'
-                            echo '${SUDO_PASSWORD}' | sudo -S sh -c 'echo "${DOCKER_HUB_CREDENTIALS_PSW}" | docker login -u "${DOCKER_HUB_CREDENTIALS_USR}" --password-stdin'
+                            echo '\${SUDO_PASSWORD}' | sudo -S sh -c 'echo \"\${DOCKER_HUB_CREDENTIALS_PSW}\" | docker login -u \"\${DOCKER_HUB_CREDENTIALS_USR}\" --password-stdin'
                             
                             # Push the Docker image
                             echo 'Pushing Docker image...'
-                            echo '${SUDO_PASSWORD}' | sudo -S docker push ${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:${BUILD_NUMBER} || echo 'Error pushing version ${BUILD_NUMBER}'
-                            echo '${SUDO_PASSWORD}' | sudo -S docker push ${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:latest || echo 'Error pushing latest version'
-                            
+                            echo '\${SUDO_PASSWORD}' | sudo -S docker push \${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:${BUILD_NUMBER} || echo 'Error pushing version ${BUILD_NUMBER}'
+                            echo '\${SUDO_PASSWORD}' | sudo -S docker push \${DOCKER_HUB_CREDENTIALS_USR}/guess-game-app:latest || echo 'Error pushing latest version'
+                        "
+                    """
+                }
+            }
+        }
+        
+        stage('Deploy') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
+                    string(credentialsId: 'local-pc-sudo-password', variable: 'SUDO_PASSWORD')
+                ]) {
+                    sh """#!/bin/bash
+                        ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} "
                             # Check and stop existing container
                             echo 'Stopping existing container...'
                             echo '\${SUDO_PASSWORD}' | sudo -S docker stop ${CONTAINER_NAME} || true
@@ -154,7 +211,20 @@ pipeline {
                                 --restart unless-stopped \\
                                 --network=host \\
                                 ${DOCKER_IMAGE_NAME}:${BUILD_NUMBER}
-
+                        "
+                    """
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
+                    string(credentialsId: 'local-pc-sudo-password', variable: 'SUDO_PASSWORD')
+                ]) {
+                    sh """#!/bin/bash
+                        ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} "
                             # Increased wait time for application startup
                             echo 'Waiting for application to start...'
                             sleep 10
@@ -177,7 +247,26 @@ pipeline {
                                     fi
                                 fi
                             done
-                        " || echo "Deployment failed but continuing"
+                        "
+                    """
+                }
+            }
+        }
+        
+        stage('Error Handler') {
+            when {
+                expression { return false }  // This stage will not run automatically
+            }
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
+                    string(credentialsId: 'local-pc-sudo-password', variable: 'SUDO_PASSWORD')
+                ]) {
+                    sh """#!/bin/bash
+                        # Start container if stopped
+                        ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} '
+                            echo "\${SUDO_PASSWORD}" | sudo -S docker start ${CONTAINER_NAME} || true
+                        ' || echo "Failed to restart container, but continuing"
                     """
                 }
             }
@@ -186,16 +275,19 @@ pipeline {
     
     post {
         failure {
-            withCredentials([
-                sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
-                string(credentialsId: 'local-pc-sudo-password', variable: 'SUDO_PASSWORD')
-            ]) {
-                sh """#!/bin/bash
-                    # Start container if stopped
-                    ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} '
-                        echo "\${SUDO_PASSWORD}" | sudo -S docker start ${CONTAINER_NAME} || true
-                    ' || echo "Failed to restart container, but continuing"
-                """
+            script {
+                // Execute Error Handler logic
+                withCredentials([
+                    sshUserPrivateKey(credentialsId: 'local-pc-ssh-key', keyFileVariable: 'SSH_KEY_FILE'),
+                    string(credentialsId: 'local-pc-sudo-password', variable: 'SUDO_PASSWORD')
+                ]) {
+                    sh """#!/bin/bash
+                        # Start container if stopped
+                        ssh -o StrictHostKeyChecking=no -i "\${SSH_KEY_FILE}" ${params.SSH_USER}@${params.LOCAL_PC_IP} '
+                            echo "\${SUDO_PASSWORD}" | sudo -S docker start ${CONTAINER_NAME} || true
+                        ' || echo "Failed to restart container, but continuing"
+                    """
+                }
             }
         }
     }
